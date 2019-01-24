@@ -1,2 +1,2 @@
 # WinformsFirebase
-Connect Windows Form app Firebase realtime database
+Connect Windows Form app to Firebase realtime database
