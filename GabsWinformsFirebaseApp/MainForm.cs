@@ -32,8 +32,9 @@ namespace GabsWinformsFirebaseApp
         // https://stackoverflow.com/questions/37418372/firebase-where-is-my-account-secret-in-the-new-console
         private string firebaseApiKey = "NYMI0Ko6jsOJRfXh0aGlBEUnd8Z5mwt9iHaeYXV9";
         private string firebaseDatabaseURL = "https://gabsfirebasewinapp.firebaseio.com";
+        FireSharpHelper fireSharpHelper;
 
-        private IFirebaseClient _firebaseClient;
+
         private string _firebaseEndpoint = "Cars";
         private List<CarType> carTypes = new List<CarType>();
 
@@ -41,12 +42,9 @@ namespace GabsWinformsFirebaseApp
         {
             CheckForIllegalCrossThreadCalls = false;
 
-            // https://github.com/ziyasal/FireSharp
-            IFirebaseConfig config = new FirebaseConfig();
-            config.AuthSecret = firebaseApiKey;
-            config.BasePath = firebaseDatabaseURL;
-            _firebaseClient = new FirebaseClient(config);
-            if (_firebaseClient != null)
+            fireSharpHelper =  new FireSharpHelper(firebaseApiKey, firebaseDatabaseURL, _firebaseEndpoint);
+
+            if (fireSharpHelper.IsConnected)
             {
                 MessageBox.Show("Connected to Firebase Realtime Database.");
                 GetCarsFromFirebase();
@@ -61,15 +59,13 @@ namespace GabsWinformsFirebaseApp
 
         private async void GetCarsFromFirebase()
         {
-            if (_firebaseClient != null)
+            if (fireSharpHelper.IsConnected)
             {
-                FirebaseResponse responseGet = await _firebaseClient.GetAsync(_firebaseEndpoint);
-                var result = responseGet.ResultAs<Dictionary<string, Car>>();
-                if (result != null)
+                var cars = await fireSharpHelper.GetAllAsync<Car>();
+                if (cars != null)
                 {
                     try
                     {
-                        var cars = result.Select(s => s.Value).ToList(); 
                         bindingSourceCar.DataSource = cars;
                     }
                     catch (Exception ex)
@@ -85,9 +81,7 @@ namespace GabsWinformsFirebaseApp
                     car1.Model = "Wigo";
                     car1.Type = "1";
                     car1.Color = "Red";
-                    var responseSet = await _firebaseClient.SetAsync(_firebaseEndpoint + "/c" + car1.Id.ToString(), car1);
-                    var res = responseSet.ResultAs<Car>();
-                    await GetNewCarId();
+                    await fireSharpHelper.SetAsync<Car>(car1.Id.ToString(), car1); // await _firebaseClient.SetAsync(_firebaseEndpoint + "/c" + car1.Id.ToString(), car1);
                     GetCarsFromFirebase();
                 }
             }
@@ -111,23 +105,6 @@ namespace GabsWinformsFirebaseApp
             comboCarType.ValueMember = "Id";
         }
 
-        private async Task<int> GetNewCarId()
-        {
-            int carId = 1;
-
-            var responseGet = await _firebaseClient.GetAsync("_Ids/" + _firebaseEndpoint);
-            var result = responseGet.ResultAs<CarIdGenerator>();
-            if (result != null)
-                carId = result.Id;
-
-            // Increment Id by 1
-            var newCarIdGen = new CarIdGenerator();
-            newCarIdGen.Id = carId + 1;
-            await _firebaseClient.SetAsync("_Ids/" + _firebaseEndpoint, newCarIdGen);
-
-            return carId;
-        }
-
         private async void btnSave_Click(object sender, EventArgs e)
         {
             btnSave.Enabled = false;
@@ -138,10 +115,9 @@ namespace GabsWinformsFirebaseApp
             if (newCar != null)
             {
                 if (string.IsNullOrWhiteSpace(txtCarId.Text) || txtCarId.Text == "0")
-                    newCar.Id = await GetNewCarId();
+                    newCar.Id = await fireSharpHelper.GetIdAsync();
 
-                var responseSet = await _firebaseClient.SetAsync(_firebaseEndpoint + "/c" + newCar.Id.ToString(), newCar);
-                var result = responseSet.ResultAs<Car>();
+                var result = await fireSharpHelper.SetAsync<Car>(newCar.Id.ToString(), newCar);
                 if (result != null)
                 {
                     txtCarId.Text = result.Id.ToString();
@@ -159,13 +135,14 @@ namespace GabsWinformsFirebaseApp
         private async void bindingNavigatorDeleteItem_MouseDown(object sender, MouseEventArgs e)
         {
             var delCar = bindingSourceCar.Current as Car;
-            var responseDel = await _firebaseClient.DeleteAsync(_firebaseEndpoint + "/c" + delCar.Id);
-            if (responseDel.StatusCode != System.Net.HttpStatusCode.OK)
+            var result = await fireSharpHelper.DeleteAsync(delCar.Id.ToString());
+            if (!result)
                 MessageBox.Show("Deletion failed.");
         }
 
         private async void ListenToFirebase()
         {
+            var _firebaseClient = fireSharpHelper.GetClient();
             EventStreamResponse response = await _firebaseClient.OnAsync(_firebaseEndpoint,
             added: (s, args, d) =>
             {
