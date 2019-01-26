@@ -10,16 +10,17 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace GabsWinformsFirebaseApp
-{   
+{
     public class FireSharpHelper
     {
         // https://github.com/ziyasal/FireSharp
+        // https://stackoverflow.com/questions/37418372/firebase-where-is-my-account-secret-in-the-new-console
 
         private readonly IFirebaseClient _firebaseClient;
         private readonly string _firebaseEndpoint;
         private readonly string _idPrefix;
 
-        public bool IsConnected { get; set; } = false;
+        public bool IsConnected { get; } = false;
 
         public FireSharpHelper(string firebaseApiKey, string firebaseDatabaseURL, string firebaseEndpoint)
         {
@@ -72,14 +73,17 @@ namespace GabsWinformsFirebaseApp
                 return false;
         }
 
-        public async Task<int> GetIdAsync()
+        public async Task<int> GenerateIdAsync()
         {
             int Id;
 
             var responseGet = await _firebaseClient.GetAsync("_Ids/" + _firebaseEndpoint);
             var result = responseGet.ResultAs<FirebaseIdGenerator>();
             if (result != null)
+            {
                 Id = result.Id;
+                if (Id == 0) Id = 1;
+            }
             else
                 Id = 1;
 

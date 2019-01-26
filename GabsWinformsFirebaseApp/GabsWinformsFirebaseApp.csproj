@@ -68,14 +68,20 @@
     <None Include="Properties\DataSources\Car.datasource" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FireSharp">
-      <Version>2.0.4</Version>
-    </PackageReference>
-  </ItemGroup>
-  <ItemGroup>
     <EmbeddedResource Include="MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
     </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FirebaseDatabase.net">
+      <Version>3.3.3</Version>
+    </PackageReference>
+    <PackageReference Include="FireSharp">
+      <Version>2.0.4</Version>
+    </PackageReference>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>9.0.1</Version>
+    </PackageReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

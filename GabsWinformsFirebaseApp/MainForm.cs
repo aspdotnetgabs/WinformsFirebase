@@ -16,6 +16,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using static GabsWinformsFirebaseApp.FireSharpHelper;
 
 namespace GabsWinformsFirebaseApp
 {
@@ -30,21 +31,17 @@ namespace GabsWinformsFirebaseApp
 		}
 
         // https://stackoverflow.com/questions/37418372/firebase-where-is-my-account-secret-in-the-new-console
-        private string firebaseApiKey = "NYMI0Ko6jsOJRfXh0aGlBEUnd8Z5mwt9iHaeYXV9";
-        private string firebaseDatabaseURL = "https://gabsfirebasewinapp.firebaseio.com";
-        FireSharpHelper fireSharpHelper;
-
-
-        private string _firebaseEndpoint = "Cars";
+        private static string firebaseApiKey = "NYMI0Ko6jsOJRfXh0aGlBEUnd8Z5mwt9iHaeYXV9";
+        private static string firebaseDatabaseURL = "https://gabsfirebasewinapp.firebaseio.com";
+        private static string _firebaseEndpoint = "Cars";
+        FirebaseDatabaseHelper firebase = new FirebaseDatabaseHelper(firebaseApiKey, firebaseDatabaseURL, _firebaseEndpoint);
         private List<CarType> carTypes = new List<CarType>();
 
         private void MainForm_Load(object sender, EventArgs e)
         {
             CheckForIllegalCrossThreadCalls = false;
 
-            fireSharpHelper =  new FireSharpHelper(firebaseApiKey, firebaseDatabaseURL, _firebaseEndpoint);
-
-            if (fireSharpHelper.IsConnected)
+            if (firebase.IsConnected)
             {
                 MessageBox.Show("Connected to Firebase Realtime Database.");
                 GetCarsFromFirebase();
@@ -59,10 +56,10 @@ namespace GabsWinformsFirebaseApp
 
         private async void GetCarsFromFirebase()
         {
-            if (fireSharpHelper.IsConnected)
+            if (firebase.IsConnected)
             {
-                var cars = await fireSharpHelper.GetAllAsync<Car>();
-                if (cars != null)
+                var cars = await firebase.GetAllAsync<Car>();
+                if (cars != null && cars.Count > 0)
                 {
                     try
                     {
@@ -76,12 +73,12 @@ namespace GabsWinformsFirebaseApp
                 else
                 {
                     Car car1 = new Car();
-                    car1.Id = 1;
+                    car1.Id = await firebase.GenerateIdAsync();
                     car1.Brand = "Toyota";
                     car1.Model = "Wigo";
                     car1.Type = "1";
                     car1.Color = "Red";
-                    await fireSharpHelper.SetAsync<Car>(car1.Id.ToString(), car1); // await _firebaseClient.SetAsync(_firebaseEndpoint + "/c" + car1.Id.ToString(), car1);
+                    await firebase.SetAsync<Car>(car1.Id.ToString(), car1); // await _firebaseClient.SetAsync(_firebaseEndpoint + "/c" + car1.Id.ToString(), car1);
                     GetCarsFromFirebase();
                 }
             }
@@ -115,9 +112,9 @@ namespace GabsWinformsFirebaseApp
             if (newCar != null)
             {
                 if (string.IsNullOrWhiteSpace(txtCarId.Text) || txtCarId.Text == "0")
-                    newCar.Id = await fireSharpHelper.GetIdAsync();
+                    newCar.Id = await firebase.GenerateIdAsync();
 
-                var result = await fireSharpHelper.SetAsync<Car>(newCar.Id.ToString(), newCar);
+                var result = await firebase.SetAsync<Car>(newCar.Id.ToString(), newCar);
                 if (result != null)
                 {
                     txtCarId.Text = result.Id.ToString();
@@ -135,29 +132,40 @@ namespace GabsWinformsFirebaseApp
         private async void bindingNavigatorDeleteItem_MouseDown(object sender, MouseEventArgs e)
         {
             var delCar = bindingSourceCar.Current as Car;
-            var result = await fireSharpHelper.DeleteAsync(delCar.Id.ToString());
+            var result = await firebase.DeleteAsync(delCar.Id.ToString());
             if (!result)
                 MessageBox.Show("Deletion failed.");
         }
 
         private async void ListenToFirebase()
         {
-            var _firebaseClient = fireSharpHelper.GetClient();
-            EventStreamResponse response = await _firebaseClient.OnAsync(_firebaseEndpoint,
-            added: (s, args, d) =>
+            var _firebaseClient = firebase.GetClient();
+            var observable = _firebaseClient.Child(_firebaseEndpoint).AsObservable<Car>().Subscribe(c =>
             {
-                var id = args.Path.Split('/')[1];
-                firebaseStatus.Text = "[" + DateTime.Now.ToString("hh:mm:ss:fff tt") + "] [{id}] Received ADDED updates from Firebase...";
-            },
-            changed: (s, args, d) =>
-            {
-                var id = args.Path.Split('/')[1];
-                firebaseStatus.Text = "[" + DateTime.Now.ToString("hh:mm:ss:fff tt") + "] [{id}] Received CHANGED updates from Firebase...";
-            },
-            removed: (s, args, d) =>
-            {
-                var id = args.Path.Split('/')[1];
-                firebaseStatus.Text = "[" + DateTime.Now.ToString("hh:mm:ss:fff tt") + "] [{id}] Received DELETE updates from Firebase...";
+                var carObj = c.Object;
+                if (c.EventType == Firebase.Database.Streaming.FirebaseEventType.Delete)
+                {
+                    var car = bindingSourceCar.List.OfType<Car>().FirstOrDefault(f => f.Id == carObj.Id);
+                    bindingSourceCar.RemoveAt(bindingSourceCar.IndexOf(car));
+                }
+                else
+                {
+                    var cars = (IList<Car>)bindingSourceCar.List;
+                    var exist = cars.Any(x => x.Id == carObj.Id);
+                    if (!exist)
+                        bindingSourceCar.Add(carObj);
+                    else
+                    {
+                        var car = bindingSourceCar.List.OfType<Car>().FirstOrDefault(f => f.Id == carObj.Id);
+                        bindingSourceCar.Position = bindingSourceCar.IndexOf(car);
+                        txtBrand.Text = carObj.Brand;
+                        txtModel.Text = carObj.Model;
+                        txtColor.Text = carObj.Color;
+                        bindingSourceCar.EndEdit();
+                    }
+                }
+
+
             });
         }
     }
