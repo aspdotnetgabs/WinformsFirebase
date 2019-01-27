@@ -3,6 +3,7 @@ using Firebase.Database.Query;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -92,12 +93,16 @@ namespace GabsWinformsFirebaseApp
             return Id;
         }
 
-        private void ListenToFirebase<T>()
+        public void ListenEventStreaming<TSender, TObject>(object sender, string strSenderMethod = "ListenToFirebase")
         {
-            var observable = _firebaseClient.Child(_firebaseEndpoint).AsObservable<T>().Subscribe(d =>
+            var observable = _firebaseClient.Child(_firebaseEndpoint).AsObservable<TObject>().Subscribe(x =>
             {
-                Console.WriteLine(d.Key);
+                int eventType = x.EventType == Firebase.Database.Streaming.FirebaseEventType.Delete ? 1 : 0;
+                object[] objParam = { eventType, x.Object };
+                MethodInfo method = sender.GetType().GetMethod(strSenderMethod);
+                method.Invoke(sender, objParam);
             });
+
         }
 
 

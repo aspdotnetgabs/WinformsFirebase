@@ -16,7 +16,6 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using static GabsWinformsFirebaseApp.FireSharpHelper;
 
 namespace GabsWinformsFirebaseApp
 {
@@ -36,6 +35,7 @@ namespace GabsWinformsFirebaseApp
         private static string _firebaseEndpoint = "Cars";
         FirebaseDatabaseHelper firebase = new FirebaseDatabaseHelper(firebaseApiKey, firebaseDatabaseURL, _firebaseEndpoint);
         private List<CarType> carTypes = new List<CarType>();
+        private string dontSendBackToMeId = Guid.NewGuid().ToString();
 
         private void MainForm_Load(object sender, EventArgs e)
         {
@@ -45,7 +45,8 @@ namespace GabsWinformsFirebaseApp
             {
                 MessageBox.Show("Connected to Firebase Realtime Database.");
                 GetCarsFromFirebase();
-                ListenToFirebase();
+                //ListenToFirebase();
+                firebase.ListenEventStreaming<MainForm, Car>(this);
             }
             else
                 MessageBox.Show("Error connecting to Firebase.");
@@ -111,8 +112,12 @@ namespace GabsWinformsFirebaseApp
             Car newCar = bindingSourceCar.Current as Car;
             if (newCar != null)
             {
+                bool AddNew = false;
                 if (string.IsNullOrWhiteSpace(txtCarId.Text) || txtCarId.Text == "0")
+                {
                     newCar.Id = await firebase.GenerateIdAsync();
+                    AddNew = true;
+                }
 
                 var result = await firebase.SetAsync<Car>(newCar.Id.ToString(), newCar);
                 if (result != null)
@@ -122,7 +127,8 @@ namespace GabsWinformsFirebaseApp
                     MessageBox.Show("Successfully saved to Firebase.");
                     btnSave.Text = btnSaveOrigText;
                     btnSave.Enabled = true;
-                    txtCarId.Focus();
+                    if (AddNew) bindingSourceCar.AddNew();
+                    txtBrand.Focus();
                 }
                 else
                     MessageBox.Show("Error saving the data to Firebase.");
@@ -137,36 +143,57 @@ namespace GabsWinformsFirebaseApp
                 MessageBox.Show("Deletion failed.");
         }
 
-        private async void ListenToFirebase()
+        private void bindingNavigatorAddNewItem_Click(object sender, EventArgs e)
         {
-            var _firebaseClient = firebase.GetClient();
-            var observable = _firebaseClient.Child(_firebaseEndpoint).AsObservable<Car>().Subscribe(c =>
+            txtBrand.Focus();
+        }
+
+        private void dataGridView1_DataError(object sender, DataGridViewDataErrorEventArgs e)
+        {
+            e.Cancel = true;
+        }
+
+        public void ListenToFirebase(int firebaseEventType, object firebaseObject)
+        {
+            var carObj = (Car) firebaseObject;
+            if (carObj == null)  return;
+            var car = bindingSourceCar.List.OfType<Car>().FirstOrDefault(f => f.Id == carObj.Id);
+
+            bindingSourceCar.EndEdit();
+            if (firebaseEventType == 1) // Delete
             {
-                var carObj = c.Object;
-                if (c.EventType == Firebase.Database.Streaming.FirebaseEventType.Delete)
+                if (car != null)
+                    bindingSourceCar.Remove(car);
+                firebaseStatus.Text = "[" + DateTime.Now.ToString("hh:mm:ss:fff tt") + "] Item[" + carObj.Id + "] Received DELETE updates from Firebase...";
+            }
+            else // insert update
+            {
+                var cars = (IList<Car>)bindingSourceCar.List;
+                var exist = cars.Any(x => x.Id == carObj.Id);
+                if (!exist)
                 {
-                    var car = bindingSourceCar.List.OfType<Car>().FirstOrDefault(f => f.Id == carObj.Id);
-                    bindingSourceCar.RemoveAt(bindingSourceCar.IndexOf(car));
+                    bindingSourceCar.Add(carObj);
                 }
                 else
                 {
-                    var cars = (IList<Car>)bindingSourceCar.List;
-                    var exist = cars.Any(x => x.Id == carObj.Id);
-                    if (!exist)
-                        bindingSourceCar.Add(carObj);
-                    else
+                    foreach (DataGridViewRow dgvr in dataGridView1.Rows)
                     {
-                        var car = bindingSourceCar.List.OfType<Car>().FirstOrDefault(f => f.Id == carObj.Id);
-                        bindingSourceCar.Position = bindingSourceCar.IndexOf(car);
-                        txtBrand.Text = carObj.Brand;
-                        txtModel.Text = carObj.Model;
-                        txtColor.Text = carObj.Color;
-                        bindingSourceCar.EndEdit();
+                        int id = Convert.ToInt32(dgvr.Cells[0].Value);
+                        if(id == carObj.Id)
+                        {
+                            dgvr.Cells[1].Value = carObj.Brand;
+                            dgvr.Cells[2].Value = carObj.Model;
+                            dgvr.Cells[3].Value = carObj.Type;
+                            dgvr.Cells[4].Value = carObj.Color;
+                            break;
+                        }
                     }
                 }
 
-
-            });
+                firebaseStatus.Text = "[" + DateTime.Now.ToString("hh:mm:ss:fff tt") + "] Item[" + carObj.Id + "] Received ADD/EDIT updates from Firebase...";
+            }
         }
+
+
     }
 }
